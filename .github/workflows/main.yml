@@ -99,7 +99,7 @@ jobs:
           
           make defconfig
 
-      - name: Create Custom Files (IP: 192.168.2.1, User: root/root)
+      - name: Create Custom Files
         run: |
           cd openwrt
           mkdir -p files/etc/uci-defaults
