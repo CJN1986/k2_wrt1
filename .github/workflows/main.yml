@@ -1,7 +1,7 @@
-name: Build OpenWrt for Phicomm K2 (128M+16M)
+name: Build OpenWrt for K2 (128M+32M+Custom)
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,23 +19,18 @@ jobs:
 
       - name: Clone source code
         run: |
+          # 推荐使用 23.05 版本，兼顾稳定性和插件量
           git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
-          # 你也可以换成 lean 的源码: https://github.com/coolsnowwolf/lede
 
-      - name: Patch for 128M RAM & 16M Flash
+      - name: Patch for 128M RAM & 32M Flash
         run: |
           cd openwrt
           DTS_FILE="target/linux/ramips/dts/mt7620a_phicomm_k2-v22.4.dts"
-          
-          # 1. 修改内存从 64M 到 128M
+          # 修改内存为 128M
           sed -i 's/<0x0 0x4000000>/<0x0 0x8000000>/g' $DTS_FILE
-          
-          # 2. 修改 Flash 分区表 (适应 16M 闪存)
-          # 注意：这里将 firmware 分区扩大，并确保 art 分区在 16M 的末尾
-          sed -i 's/reg = <0x50000 0x7b0000>/reg = <0x50000 0xfb0000>/g' $DTS_FILE
-          sed -i 's/reg = <0x7f0000 0x10000>/reg = <0xff0000 0x10000>/g' $DTS_FILE
-          
-          echo "DTS patch applied successfully."
+          # 修改 Flash 分区：firmware 扩容，art 挪到 32M 末尾
+          sed -i 's/reg = <0x50000 0x7b0000>/reg = <0x50000 0x1fa0000>/g' $DTS_FILE
+          sed -i 's/reg = <0x7f0000 0x10000>/reg = <0x1ff0000 0x10000>/g' $DTS_FILE
 
       - name: Update & Install feeds
         run: |
@@ -43,27 +38,67 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Generate Configuration
+      - name: Custom Configuration (Language & Sources)
         run: |
           cd openwrt
-          # 设置目标架构为 ramips/mt7620, 型号为 Phicomm K2
-          echo "CONFIG_TARGET_ramips=y" > .config
+          # 1. 默认安装中文语言包和 LuCI 界面
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-opkg-zh-cn=y" >> .config
+
+          # 2. 默认使用阿里云软件源
+          # 将 downloads.openwrt.org 替换为 mirrors.aliyun.com/openwrt
+          sed -i 's/downloads.openwrt.org/mirrors.aliyun.com\/openwrt/g' package/base-files/files/etc/opkg/distfeeds.conf
+
+          # 3. 设置默认型号名称（可选，方便在系统里识别）
+          echo "CONFIG_TARGET_ramips=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7620=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y" >> .config
           make defconfig
 
-      - name: Download package
+      - name: Create Custom Files (WiFi & Password)
         run: |
           cd openwrt
-          make download -j8
+          mkdir -p files/etc/uci-defaults
+          mkdir -p files/etc/config
+
+          # 设置 root 密码为 root
+          NEW_PASS=$(openssl passwd -1 "root")
+          sed -i "s|root:[^:]*:|root:${NEW_PASS}:|" package/base-files/files/etc/shadow
+
+          # 编写初始化脚本：WiFi 和 语言设置
+          cat <<EOF > files/etc/uci-defaults/99-custom-settings
+          # 1. WiFi 设置
+          # 这里的 radio0/1 取决于驱动加载顺序，K2 2.4G 通常是 radio0
+          uci set wireless.default_radio0.ssid='MiWIFI'
+          uci set wireless.default_radio0.encryption='psk2'
+          uci set wireless.default_radio0.key='1234578'
+          uci set wireless.radio0.disabled='0'
+
+          uci set wireless.default_radio1.ssid='MiWIFI_5G'
+          uci set wireless.default_radio1.encryption='psk2'
+          uci set wireless.default_radio1.key='1234578'
+          uci set wireless.radio1.disabled='0'
+
+          # 2. 系统设置：时区和语言
+          uci set system.@system[0].zonename='Asia/Shanghai'
+          uci set system.@system[0].timezone='CST-8'
+          uci set luci.main.lang='zh_cn'
+
+          uci commit wireless
+          uci commit system
+          uci commit luci
+          EOF
+
+      - name: Download package
+        run: cd openwrt && make download -j8
 
       - name: Compile the firmware
-        run: |
-          cd openwrt
-          make -j$(nproc) || make -j1 V=s
+        run: cd openwrt && make -j$(nproc) || make -j1 V=s
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_K2_128M_16M
+          name: K2-128M-32M-Final-Firmware
           path: openwrt/bin/targets/ramips/mt7620/*.bin
