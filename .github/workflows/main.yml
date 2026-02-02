@@ -1,4 +1,4 @@
-name: K2-24.10-Extreme-Final-V2
+name: K2-24.10-32M-Xray-Ultimate
 
 on:
   watch:
@@ -21,127 +21,110 @@ jobs:
 
       - name: Clone source code
         run: |
-          # 拉取 24.10 稳定版分支
           git clone --depth 1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git
 
-      - name: Patch for 128M RAM & 32M Flash
+      - name: Patch for 128M RAM & 32M Flash (Hardware Hack)
         run: |
           cd openwrt
-          DTS_FILE="target/linux/ramips/dts/mt7620a_phicomm_k2-v22.4.dts"
-          # 128M 内存适配
+          # 1. 修改 DTS 适配 128M 内存和 32M 闪存分区
+          DTS_FILE=$(find target/linux/ramips/dts/ -name "mt7620a_phicomm_k2-v22.4.dts")
+          echo "Found DTS: $DTS_FILE"
+          # 内存适配 128M
           sed -i 's/<0x0 0x4000000>/<0x0 0x8000000>/g' $DTS_FILE
-          # 32M 闪存布局适配 (Firmware 分区扩容)
+          # 闪存分区适配 32M (修改 firmware 分区大小)
           sed -i 's/reg = <0x50000 0x7b0000>/reg = <0x50000 0x1fa0000>/g' $DTS_FILE
           sed -i 's/reg = <0x7f0000 0x10000>/reg = <0x1ff0000 0x10000>/g' $DTS_FILE
 
-      - name: Add Xray Feed & Fix Directory Errors
+          # 2. 修改 Makefile 突破官方 8M 编译限制 (核心修复)
+          MAKEFILE="target/linux/ramips/image/mt7620.mk"
+          echo "Patching Makefile: $MAKEFILE"
+          # 将 K2 的 IMAGE_SIZE 限制从 7872k 修改为 30720k (30M)
+          sed -i '/phicomm_k2-v22.4/,/IMAGE_SIZE/s/IMAGE_SIZE := [0-9]*k/IMAGE_SIZE := 30720k/' $MAKEFILE
+
+      - name: Add Xray Feed (Mirror & Path Fixed)
         run: |
           cd openwrt
-          # 1. 核心修复：将官方源替换为 GitHub 镜像源，解决 503 报错
+          # 替换官方 Git 源为 GitHub 镜像，解决 503 报错
           sed -i 's/git.openwrt.org\/feed\/packages/github.com\/openwrt\/packages/g' feeds.conf.default
           sed -i 's/git.openwrt.org\/project\/luci/github.com\/openwrt\/luci/g' feeds.conf.default
           sed -i 's/git.openwrt.org\/feed\/routing/github.com\/openwrt\/routing/g' feeds.conf.default
           sed -i 's/git.openwrt.org\/feed\/telephony/github.com\/openwrt\/telephony/g' feeds.conf.default
           
-          # 2. 修复 Xray 源：这里换成一个不需要认证的常用源路径
+          # 添加你修正后的 Xray 插件源
           echo "src-git xray_source https://github.com/bi7prk/luci-app-xray.git" >> feeds.conf.default
           
-          # 3. 更新 Feeds，增加延迟和重试
-          ./scripts/feeds update -a || (sleep 30 && ./scripts/feeds update -a) || (sleep 60 && ./scripts/feeds update -a)
-          
-          # 4. 安装
+          ./scripts/feeds update -a || (sleep 10 && ./scripts/feeds update -a)
           ./scripts/feeds install -a
 
-      - name: Patch for Chinese SSID & Build Fix
-        run: |
-          cd openwrt
-          # 修复 LuCI WiFi 扫描中文乱码
-          find feeds/luci -name "*.js" | xargs -r sed -i 's/p.ssid || (p.bssid/decodeURIComponent(escape(p.ssid)) || (p.bssid/g' 2>/dev/null || true
-
-      - name: Custom Configuration (Extreme Optimization)
+      - name: Custom Configuration (Extreme Slimming)
         run: |
           cd openwrt
           echo "CONFIG_TARGET_ramips=y" > .config
           echo "CONFIG_TARGET_ramips_mt7620=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y" >> .config
           
-          # 【内核与系统压缩：解决体积与性能平衡】
+          # 【压缩与精简设置】
           echo "CONFIG_KERNEL_GZIP=y" >> .config
+          echo "CONFIG_XRAY_CORE_COMPRESS_UPX=y" >> .config
           echo "CONFIG_STRIP_KERNEL_EXPORTS=y" >> .config
           echo "CONFIG_USE_SSTRIP=y" >> .config
-          echo "CONFIG_XRAY_CORE_COMPRESS_UPX=y" >> .config
 
-          # 【管理账户与 SFTP 适配 (Bitvise 专用)】
+          # 【管理与文件传输】
           echo "CONFIG_PACKAGE_openssh-sftp-server=y" >> .config 
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
 
-          # 【Xray 完全集成 (nftables 兼容版)】
+          # 【魔法上网组件】
           echo "CONFIG_PACKAGE_luci-app-xray=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-xray-zh-cn=y" >> .config
           echo "CONFIG_PACKAGE_xray-core=y" >> .config
           echo "CONFIG_PACKAGE_xray-example=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
 
-          # 【极度精简：移除无用硬件模块】
-          # 移除蓝牙
-          echo "CONFIG_BLUEZ_LOWDATA=n" >> .config
+          # 【精简：移除蓝牙、USB、无用拨号】
           echo "CONFIG_PACKAGE_kmod-bluetooth=n" >> .config
-          echo "CONFIG_PACKAGE_kmod-bt-mt76=n" >> .config
-          # 移除 USB
           echo "CONFIG_PACKAGE_kmod-usb-core=n" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb-ohci=n" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb2=n" >> .config
-          # 移除不常用协议
           echo "CONFIG_PACKAGE_kmod-pppox=n" >> .config
-          echo "CONFIG_PACKAGE_kmod-pppoa=n" >> .config
-
-          # 【辅助插件】
+          
+          # 【辅助功能】
           echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-cpufreq=y" >> .config
           
           make defconfig
 
-      - name: Create Custom Files
+      - name: Create Custom Files (IP, Root, WiFi)
         run: |
           cd openwrt
           mkdir -p files/etc/uci-defaults
           
-          # 预设 root 密码为 root
+          # 密码 root / root
           NEW_PASS=$(openssl passwd -1 "root")
           sed -i "s|^root:[^:]*:|root:${NEW_PASS}:|" package/base-files/files/etc/shadow
 
           cat <<EOF > files/etc/uci-defaults/99-custom-settings
           # 1. LAN IP 192.168.2.1
           uci set network.lan.ipaddr='192.168.2.1'
-
-          # 2. 系统时区与语言
+          
+          # 2. 时区
           uci set system.@system[0].zonename='Asia/Shanghai'
           uci set system.@system[0].timezone='CST-8'
-          uci set luci.main.lang='zh_cn'
-
-          # 3. 无线修正 (radio0 为 5G, radio1 为 2.4G)
-          # 5G (radio0)
+          
+          # 3. 无线 radio0=5G, radio1=2.4G
           uci set wireless.radio0.country='US'
-          uci set wireless.radio0.bandwidth='80'
           uci set wireless.radio0.channel='149'
           uci set wireless.default_radio0.ssid='MiWIFI_5G'
           uci set wireless.default_radio0.key='12345678'
           uci set wireless.default_radio0.encryption='psk2'
           uci set wireless.radio0.disabled='0'
 
-          # 2.4G (radio1)
           uci set wireless.radio1.country='US'
-          uci set wireless.radio1.bandwidth='40'
-          uci set wireless.radio1.noscan='1'
           uci set wireless.default_radio1.ssid='MiWIFI'
           uci set wireless.default_radio1.key='12345678'
           uci set wireless.default_radio1.encryption='psk2'
           uci set wireless.radio1.disabled='0'
 
-          # 4. 换源到阿里云
+          # 4. 换源
           sed -i 's/downloads.openwrt.org/mirrors.aliyun.com\/openwrt/g' /etc/opkg/distfeeds.conf
-          
           uci commit
           EOF
           chmod +x files/etc/uci-defaults/99-custom-settings
@@ -155,5 +138,5 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: K2-24.10-Extreme-Root-192.168.2.1
+          name: K2-24.10-Extreme-32M-Final
           path: openwrt/bin/targets/ramips/mt7620/*.bin
