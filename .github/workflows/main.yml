@@ -1,0 +1,69 @@
+name: Build OpenWrt for Phicomm K2 (128M+16M)
+
+on:
+  workflow_dispatch: # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialization environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
+            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3
+
+      - name: Clone source code
+        run: |
+          git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
+          # 你也可以换成 lean 的源码: https://github.com/coolsnowwolf/lede
+
+      - name: Patch for 128M RAM & 16M Flash
+        run: |
+          cd openwrt
+          DTS_FILE="target/linux/ramips/dts/mt7620a_phicomm_k2-v22.4.dts"
+          
+          # 1. 修改内存从 64M 到 128M
+          sed -i 's/<0x0 0x4000000>/<0x0 0x8000000>/g' $DTS_FILE
+          
+          # 2. 修改 Flash 分区表 (适应 16M 闪存)
+          # 注意：这里将 firmware 分区扩大，并确保 art 分区在 16M 的末尾
+          sed -i 's/reg = <0x50000 0x7b0000>/reg = <0x50000 0xfb0000>/g' $DTS_FILE
+          sed -i 's/reg = <0x7f0000 0x10000>/reg = <0xff0000 0x10000>/g' $DTS_FILE
+          
+          echo "DTS patch applied successfully."
+
+      - name: Update & Install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Generate Configuration
+        run: |
+          cd openwrt
+          # 设置目标架构为 ramips/mt7620, 型号为 Phicomm K2
+          echo "CONFIG_TARGET_ramips=y" > .config
+          echo "CONFIG_TARGET_ramips_mt7620=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y" >> .config
+          make defconfig
+
+      - name: Download package
+        run: |
+          cd openwrt
+          make download -j8
+
+      - name: Compile the firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_K2_128M_16M
+          path: openwrt/bin/targets/ramips/mt7620/*.bin
