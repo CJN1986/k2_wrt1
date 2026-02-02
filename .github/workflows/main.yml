@@ -2,8 +2,8 @@ name: Build OpenWrt for K2 (128M+32M+Custom)
 
 on:
   watch:
-    types: [started]
-  workflow_dispatch:
+    types: [started] # 点击仓库 Star 触发
+  workflow_dispatch: # 手动触发
 
 jobs:
   build:
@@ -21,18 +21,23 @@ jobs:
 
       - name: Clone source code
         run: |
-          # 推荐使用 23.05 版本，兼顾稳定性和插件量
           git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
 
       - name: Patch for 128M RAM & 32M Flash
         run: |
           cd openwrt
           DTS_FILE="target/linux/ramips/dts/mt7620a_phicomm_k2-v22.4.dts"
-          # 修改内存为 128M
+          
+          # 1. 修改内存为 128M
           sed -i 's/<0x0 0x4000000>/<0x0 0x8000000>/g' $DTS_FILE
-          # 修改 Flash 分区：firmware 扩容，art 挪到 32M 末尾
+          
+          # 2. 修改 Flash 分区表 (32M 布局)
+          # firmware 扩容至 0x1fa0000 (约 31.6MB)
           sed -i 's/reg = <0x50000 0x7b0000>/reg = <0x50000 0x1fa0000>/g' $DTS_FILE
+          # art (EEPROM) 挪到 32M 末尾 (0x1ff0000)
           sed -i 's/reg = <0x7f0000 0x10000>/reg = <0x1ff0000 0x10000>/g' $DTS_FILE
+          
+          echo "DTS patch applied."
 
       - name: Update & Install feeds
         run: |
@@ -40,67 +45,68 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Custom Configuration (Language & Sources)
+      - name: Custom Configuration
         run: |
           cd openwrt
-          # 1. 默认安装中文语言包和 LuCI 界面
+          # 设定目标硬件
+          echo "CONFIG_TARGET_ramips=y" > .config
+          echo "CONFIG_TARGET_ramips_mt7620=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y" >> .config
+          
+          # 预装 LuCI、中文语言包及常用基础组件
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-opkg-zh-cn=y" >> .config
-
-          # 2. 默认使用阿里云软件源
-          # 将 downloads.openwrt.org 替换为 mirrors.aliyun.com/openwrt
-          sed -i 's/downloads.openwrt.org/mirrors.aliyun.com\/openwrt/g' package/base-files/files/etc/opkg/distfeeds.conf
-
-          # 3. 设置默认型号名称（可选，方便在系统里识别）
-          echo "CONFIG_TARGET_ramips=y" >> .config
-          echo "CONFIG_TARGET_ramips_mt7620=y" >> .config
-          echo "CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y" >> .config
+          
           make defconfig
 
-      - name: Create Custom Files (WiFi & Password)
+      - name: Create Custom Files (WiFi, Password, Source)
         run: |
           cd openwrt
           mkdir -p files/etc/uci-defaults
-          mkdir -p files/etc/config
-
-          # 设置 root 密码为 root
+          
+          # 1. 预设 root 密码为 root
           NEW_PASS=$(openssl passwd -1 "root")
           sed -i "s|root:[^:]*:|root:${NEW_PASS}:|" package/base-files/files/etc/shadow
 
-          # 编写初始化脚本：WiFi 和 语言设置
+          # 2. 编写初始化脚本
           cat <<EOF > files/etc/uci-defaults/99-custom-settings
-          # 1. WiFi 设置
-          # 这里的 radio0/1 取决于驱动加载顺序，K2 2.4G 通常是 radio0
-          uci set wireless.default_radio0.ssid='MiWIFI'
-          uci set wireless.default_radio0.encryption='psk2'
-          uci set wireless.default_radio0.key='1234578'
-          uci set wireless.radio0.disabled='0'
-
-          uci set wireless.default_radio1.ssid='MiWIFI_5G'
-          uci set wireless.default_radio1.encryption='psk2'
-          uci set wireless.default_radio1.key='1234578'
-          uci set wireless.radio1.disabled='0'
-
-          # 2. 系统设置：时区和语言
+          # 设置时区与语言
           uci set system.@system[0].zonename='Asia/Shanghai'
           uci set system.@system[0].timezone='CST-8'
           uci set luci.main.lang='zh_cn'
 
-          uci commit wireless
-          uci commit system
-          uci commit luci
+          # 配置 2.4G WiFi (MiWIFI / 12345678)
+          uci set wireless.default_radio0.ssid='MiWIFI'
+          uci set wireless.default_radio0.encryption='psk2'
+          uci set wireless.default_radio0.key='12345678'
+          uci set wireless.radio0.disabled='0'
+
+          # 配置 5G WiFi (MiWIFI_5G / 12345678)
+          uci set wireless.default_radio1.ssid='MiWIFI_5G'
+          uci set wireless.default_radio1.encryption='psk2'
+          uci set wireless.default_radio1.key='12345678'
+          uci set wireless.radio1.disabled='0'
+
+          # 软件源一键替换为阿里云镜像
+          sed -i 's/downloads.openwrt.org/mirrors.aliyun.com\/openwrt/g' /etc/opkg/distfeeds.conf
+
+          uci commit
           EOF
+          
+          chmod +x files/etc/uci-defaults/99-custom-settings
 
       - name: Download package
         run: cd openwrt && make download -j8
 
       - name: Compile the firmware
-        run: cd openwrt && make -j$(nproc) || make -j1 V=s
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: K2-128M-32M-Final-Firmware
+          name: K2-HardMod-32M-128M
           path: openwrt/bin/targets/ramips/mt7620/*.bin
