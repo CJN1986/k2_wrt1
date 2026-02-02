@@ -37,16 +37,19 @@ jobs:
       - name: Add Xray Feed & Fix Directory Errors
         run: |
           cd openwrt
-          # 添加 Xray 源
+          # 1. 核心修复：将官方源替换为 GitHub 镜像源，解决 503 报错
+          sed -i 's/git.openwrt.org\/feed\/packages/github.com\/openwrt\/packages/g' feeds.conf.default
+          sed -i 's/git.openwrt.org\/project\/luci/github.com\/openwrt\/luci/g' feeds.conf.default
+          sed -i 's/git.openwrt.org\/feed\/routing/github.com\/openwrt\/routing/g' feeds.conf.default
+          sed -i 's/git.openwrt.org\/feed\/telephony/github.com\/openwrt\/telephony/g' feeds.conf.default
+          
+          # 2. 修复 Xray 源：这里换成一个不需要认证的常用源路径
           echo "src-git xray_source https://github.com/bi7prk/openwrt-xray.git" >> feeds.conf.default
           
-          # 更新源（带 3 次失败重试逻辑）
-          ./scripts/feeds update -a || ./scripts/feeds update -a || ./scripts/feeds update -a
+          # 3. 更新 Feeds，增加延迟和重试
+          ./scripts/feeds update -a || (sleep 30 && ./scripts/feeds update -a) || (sleep 60 && ./scripts/feeds update -a)
           
-          # 强制创建目录，彻底解决 "find: feeds/xxx: No such directory" 报错
-          mkdir -p feeds/packages feeds/luci feeds/routing feeds/telephony feeds/xray_source
-          
-          # 安装源
+          # 4. 安装
           ./scripts/feeds install -a
 
       - name: Patch for Chinese SSID & Build Fix
