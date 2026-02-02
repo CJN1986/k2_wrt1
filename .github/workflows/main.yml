@@ -1,6 +1,8 @@
 name: Build OpenWrt for K2 (128M+32M+Custom)
 
 on:
+  watch:
+    types: [started]
   workflow_dispatch:
 
 jobs:
