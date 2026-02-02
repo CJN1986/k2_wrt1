@@ -44,7 +44,7 @@ jobs:
           sed -i 's/git.openwrt.org\/feed\/telephony/github.com\/openwrt\/telephony/g' feeds.conf.default
           
           # 2. 修复 Xray 源：这里换成一个不需要认证的常用源路径
-          echo "src-git xray_source https://github.com/bi7prk/openwrt-xray.git" >> feeds.conf.default
+          echo "src-git xray_source https://github.com/bi7prk/luci-app-xray.git" >> feeds.conf.default
           
           # 3. 更新 Feeds，增加延迟和重试
           ./scripts/feeds update -a || (sleep 30 && ./scripts/feeds update -a) || (sleep 60 && ./scripts/feeds update -a)
