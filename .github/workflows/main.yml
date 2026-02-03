@@ -3,6 +3,9 @@ name: K2-24.10-32M-Xray-Ultimate
 on:
   watch:
     types: [started]
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
