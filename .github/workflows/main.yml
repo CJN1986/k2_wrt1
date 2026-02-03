@@ -85,9 +85,9 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
 
           # 【精简：移除蓝牙、USB、无用拨号】
-          echo "CONFIG_PACKAGE_kmod-bluetooth=n" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb-core=n" >> .config
-          echo "CONFIG_PACKAGE_kmod-pppox=n" >> .config
+          #echo "CONFIG_PACKAGE_kmod-bluetooth=n" >> .config
+          #echo "CONFIG_PACKAGE_kmod-usb-core=n" >> .config
+          #echo "CONFIG_PACKAGE_kmod-pppox=n" >> .config
           
           # 【辅助功能】
           #echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
