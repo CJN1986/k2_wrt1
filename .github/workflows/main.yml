@@ -64,10 +64,10 @@ jobs:
           echo "CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y" >> .config
           
           # 【压缩与精简设置】
-          echo "CONFIG_KERNEL_GZIP=y" >> .config
-          echo "CONFIG_XRAY_CORE_COMPRESS_UPX=y" >> .config
-          echo "CONFIG_STRIP_KERNEL_EXPORTS=y" >> .config
-          echo "CONFIG_USE_SSTRIP=y" >> .config
+          #echo "CONFIG_KERNEL_GZIP=y" >> .config
+          #echo "CONFIG_XRAY_CORE_COMPRESS_UPX=y" >> .config
+          #echo "CONFIG_STRIP_KERNEL_EXPORTS=y" >> .config
+          #echo "CONFIG_USE_SSTRIP=y" >> .config
 
           # 【管理与文件传输】
           echo "CONFIG_PACKAGE_openssh-sftp-server=y" >> .config 
@@ -87,8 +87,8 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-pppox=n" >> .config
           
           # 【辅助功能】
-          echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-cpufreq=y" >> .config
+          #echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
+          #echo "CONFIG_PACKAGE_luci-app-cpufreq=y" >> .config
           
           make defconfig
 
@@ -103,7 +103,7 @@ jobs:
 
           cat <<EOF > files/etc/uci-defaults/99-custom-settings
           # 1. LAN IP 192.168.2.1
-          uci set network.lan.ipaddr='192.168.2.1'
+          #uci set network.lan.ipaddr='192.168.2.1'
           
           # 2. 时区
           uci set system.@system[0].zonename='Asia/Shanghai'
